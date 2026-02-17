@@ -1,11 +1,15 @@
 # TODO — SysTrayJira Pro Roadmap
 
 ## Priority (v1.0)
-- [ ] Desktop notifications on new issues
-- [ ] Quick status transitions from menu
-- [ ] Copy issue link to clipboard
-- [ ] Quick search by issue key (popup)
-- [ ] Config validation on load
+- [x] Desktop notifications on new issues
+- [x] Quick status transitions from menu
+- [x] Copy issue link to clipboard
+- [x] Quick search by issue key (popup)
+- [x] Config validation on load
+- [x] Pinned/Current tickets (max 2)
+- [x] Configuration popup (zenity)
+- [x] Copy ticket title to clipboard
+- [x] Search issues by text filter
 
 ## v1.1
 - [ ] Submenus per group

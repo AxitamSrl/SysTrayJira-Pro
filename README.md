@@ -19,6 +19,9 @@ All features from the free version, plus:
 - 🕐 Time since last refresh + total issue count
 - ⚙️ `max_results` and `sort_by` per group
 - ✅ Config validation on load
+- 📌 Current Tickets (Pinned) - Pin up to 2 tickets at the top
+- ⚙️ Configuration popup - Zenity-based config editor
+- 📝 Copy title - Copy ticket title to clipboard
 
 ## Compatibility
 
@@ -182,10 +185,42 @@ groups:
 | 🔵 | Trivial, Lowest, Very Low, P4 |
 | ⚪ | Unknown / Undefined |
 
+## Pro Features Details
+
+### 📌 Current Tickets (Pinned)
+
+Pin up to 2 tickets as "current" to keep them at the top of the menu for easy access:
+
+- Pinned tickets appear at the top of the tray menu with transitions and open-in-browser always visible
+- Pin/Unpin tickets via the popup dialog when clicking on an issue
+- Pinned tickets are stored in `~/.config/sysTrayJira/pinned.yaml` (internal file, not user-editable)
+- Maximum of 2 tickets can be pinned at once
+
+### ⚙️ Configuration Popup
+
+Zenity-based configuration editor accessible from the tray menu:
+
+- **Edit settings** - Opens the config file in your default editor
+- **Manage groups** - Toggle groups active/inactive without editing YAML
+- **Add group** - Create new JQL groups with guided prompts
+- **Open config file** - Direct access to `config.yaml`
+
+### 📝 Copy Title
+
+In popup mode, you can copy the ticket title to clipboard:
+
+- Format: `KEY — summary` (e.g., `PROJ-23871 — As a user I want to...`)
+- Available in the popup dialog when clicking on an issue
+- Uses system clipboard (requires `xclip` on Linux)
+
 ## Tray Menu
 
 ```
 🕐 Last refresh: 2m ago (12 issues)
+──────────────────────────────────────
+── 📌 Current (2) ──
+   🟡 PROJ-23871 — As a user... [In Progress]     ← pinned ticket
+   🔴 PROJ-23309 — Critical bug... [In Progress]  ← pinned ticket
 ──────────────────────────────────────
 ── 🔥 Sprint (4) ──
    🟡 PROJ-23871 — As a user... [In Progress]     ← opens browser
@@ -199,6 +234,7 @@ groups:
    ⚡ PROJ-23882 — Some task...
 ──────────────────────────────────────
 🔍 Search issues                                   ← zenity search
+⚙️ Configuration                                   ← config popup
 🔗 Open Jira Board                                 (if board_url set)
 ──────────────────────────────────────
 Reload config
@@ -221,6 +257,16 @@ Quit
 2. A zenity dialog shows available transitions for that issue
 3. Select one (e.g. "In Review") and it's applied immediately
 4. Desktop notification confirms the transition
+
+### Configuration (⚙️)
+
+1. Click "⚙️ Configuration"
+2. A zenity dialog shows configuration options:
+   - **Edit settings** - Opens `config.yaml` in your default editor
+   - **Manage groups** - Toggle groups active/inactive
+   - **Add group** - Create new JQL groups with guided prompts
+   - **Open config file** - Direct file access
+3. Changes are applied immediately (no restart required)
 
 ## Run as a Service
 
@@ -304,6 +350,9 @@ $Shortcut.Save()
 | Transitions popup not showing | Install `zenity`, check `DISPLAY` env in service |
 | Copy to clipboard not working | Install `xclip` or `xsel` |
 | Service crashes on start | Check `DISPLAY` value: `echo $DISPLAY` |
+| Configuration popup not opening | Install `zenity`, check `DISPLAY` env |
+| Pinned tickets not persisting | Check write permissions to `~/.config/sysTrayJira/` |
+| Copy title not working | Install `xclip` on Linux, check clipboard permissions |
 
 ## Free vs Pro
 
@@ -328,6 +377,9 @@ $Shortcut.Save()
 | ⚙️ max_results per group | ❌ | ✅ |
 | ⚙️ sort_by per group | ❌ | ✅ |
 | ✅ Config validation | ❌ | ✅ |
+| 📌 Pinned/Current tickets | ❌ | ✅ |
+| ⚙️ Config popup editor | ❌ | ✅ |
+| 📝 Copy title | ❌ | ✅ |
 
 ## License
 

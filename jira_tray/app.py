@@ -9,6 +9,37 @@ from PIL import Image, ImageDraw
 from pathlib import Path
 
 CONFIG_PATH = Path.home() / ".config" / "sysTrayJira" / "config.yaml"
+PINNED_PATH = Path.home() / ".config" / "sysTrayJira" / "pinned.yaml"
+MAX_PINNED = 2
+
+
+# ── Pinned (Current Tickets) ─────────────────────────────────
+
+def load_pinned():
+    if PINNED_PATH.exists():
+        with open(PINNED_PATH) as f:
+            return yaml.safe_load(f) or []
+    return []
+
+
+def save_pinned(pinned):
+    PINNED_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(PINNED_PATH, "w") as f:
+        yaml.dump(pinned[:MAX_PINNED], f, allow_unicode=True)
+
+
+def pin_ticket(key):
+    pinned = load_pinned()
+    if key not in pinned:
+        pinned.insert(0, key)
+        pinned = pinned[:MAX_PINNED]
+    save_pinned(pinned)
+
+
+def unpin_ticket(key):
+    pinned = load_pinned()
+    pinned = [k for k in pinned if k != key]
+    save_pinned(pinned)
 
 
 # ── Env & Config ──────────────────────────────────────────────
@@ -135,27 +166,47 @@ def copy_to_clipboard(text):
 # ── Zenity Transition Dialog ──────────────────────────────────
 
 def show_transition_dialog(cfg, key, summary):
-    """Show a zenity dialog with available transitions for an issue."""
+    """Show a zenity dialog with available transitions + open in browser."""
     try:
         transitions = get_transitions(cfg, key)
+        pinned = load_pinned()
+        pin_label = "📌 Unpin from current" if key in pinned else "📌 Pin as current"
+        choices = ["🌐 Open in browser", "📋 Copy link", "📝 Copy title", pin_label]
+        choices += [f"→ {t['name']}" for t in transitions]
         if not transitions:
-            notify("No transitions", f"{key} has no available transitions")
-            return
-        choices = [t["name"] for t in transitions]
+            choices.append("(no transitions available)")
+
         result = subprocess.run(
-            ["zenity", "--list", "--title", f"Transitions — {key}",
+            ["zenity", "--list", "--title", f"⚡ {key}",
              "--text", f"{key} — {summary[:60]}",
              "--column", "Action", *choices,
-             "--width", "400", "--height", "300"],
+             "--width", "400", "--height", "350"],
             capture_output=True, text=True, timeout=60,
-            env={**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":1")}
+            env=_zenity_env()
         )
-        if result.returncode == 0 and result.stdout.strip():
-            selected = result.stdout.strip()
+        if result.returncode != 0 or not result.stdout.strip():
+            return
+        selected = result.stdout.strip()
+        if selected == "🌐 Open in browser":
+            webbrowser.open(f"{cfg['jira_url']}/browse/{key}")
+        elif selected == "📋 Copy link":
+            copy_to_clipboard(f"{cfg['jira_url']}/browse/{key}")
+            notify("Copied", f"{key} link copied to clipboard")
+        elif selected == "📝 Copy title":
+            copy_to_clipboard(f"{key} — {summary}")
+            notify("Copied", f"{key} title copied to clipboard")
+        elif selected == "📌 Pin as current":
+            pin_ticket(key)
+            notify("Pinned", f"{key} set as current ticket")
+        elif selected == "📌 Unpin from current":
+            unpin_ticket(key)
+            notify("Unpinned", f"{key} removed from current tickets")
+        else:
+            tname = selected.removeprefix("→ ")
             for t in transitions:
-                if t["name"] == selected:
+                if t["name"] == tname:
                     transition_issue(cfg, key, t["id"])
-                    notify("Transition OK", f"{key} → {selected}")
+                    notify("Transition OK", f"{key} → {tname}")
                     return
     except Exception as e:
         notify("Transition error", str(e))
@@ -199,6 +250,146 @@ def show_search_dialog(cfg, data):
             webbrowser.open(f"{cfg['jira_url']}/browse/{selected_key}")
     except Exception as e:
         notify("Search error", str(e))
+
+
+def _zenity_env():
+    return {**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":1")}
+
+
+def show_config_dialog():
+    """Show zenity dialogs to edit config."""
+    try:
+        cfg = load_config()
+        env = _zenity_env()
+
+        # Main action choice
+        result = subprocess.run(
+            ["zenity", "--list", "--title", "⚙️ Configuration",
+             "--text", "Choose an action:",
+             "--column", "Action",
+             "Edit settings", "Manage groups", "Add group", "Open config file",
+             "--width", "400", "--height", "300"],
+            capture_output=True, text=True, timeout=60, env=env
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return
+
+        action = result.stdout.strip()
+
+        if action == "Edit settings":
+            _edit_settings(cfg, env)
+        elif action == "Manage groups":
+            _manage_groups(cfg, env)
+        elif action == "Add group":
+            _add_group(cfg, env)
+        elif action == "Open config file":
+            subprocess.Popen(["xdg-open", str(CONFIG_PATH)], env=env)
+            return
+
+    except Exception as e:
+        notify("Config error", str(e))
+
+
+def _edit_settings(cfg, env):
+    result = subprocess.run(
+        ["zenity", "--forms", "--title", "⚙️ Edit Settings",
+         "--text", "Modify settings (leave blank to keep current):",
+         "--add-entry", f"Jira URL [{cfg.get('jira_url', '')}]",
+         "--add-entry", f"Email [{cfg.get('email', '')}]",
+         "--add-entry", f"Poll interval secs [{cfg.get('poll_interval', 300)}]",
+         "--add-combo", "Auto refresh",
+         "--combo-values", "true|false",
+         "--add-combo", "Notifications",
+         "--combo-values", "true|false",
+         "--add-combo", "Transition mode",
+         "--combo-values", "none|flat|popup",
+         "--add-combo", "Auth mode",
+         "--combo-values", "basic|bearer|pat",
+         "--add-entry", f"Token env var [{cfg.get('token_env', 'JIRA_API_TOKEN')}]",
+         "--add-entry", f"Board URL [{cfg.get('board_url', '')}]",
+         "--width", "500", "--height", "450"],
+        capture_output=True, text=True, timeout=120, env=env
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return
+
+    vals = result.stdout.strip().split("|")
+    if len(vals) >= 9:
+        if vals[0]: cfg["jira_url"] = vals[0]
+        if vals[1]: cfg["email"] = vals[1]
+        if vals[2]: cfg["poll_interval"] = int(vals[2])
+        if vals[3]: cfg["auto_refresh"] = vals[3] == "true"
+        if vals[4]: cfg["notifications"] = vals[4] == "true"
+        if vals[5]: cfg["transition_mode"] = vals[5]
+        if vals[6]: cfg["auth_mode"] = vals[6]
+        if vals[7]: cfg["token_env"] = vals[7]
+        if vals[8]: cfg["board_url"] = vals[8]
+        _save_config(cfg)
+        notify("Config saved", "Settings updated. Click 'Reload config' to apply.")
+
+
+def _manage_groups(cfg, env):
+    groups = cfg.get("groups", [])
+    rows = []
+    for g in groups:
+        rows.extend([g["name"], g["jql"][:60], str(g.get("active", True))])
+
+    result = subprocess.run(
+        ["zenity", "--list", "--title", "📋 Manage Groups",
+         "--text", "Select a group to toggle active/inactive:",
+         "--column", "Name", "--column", "JQL", "--column", "Active",
+         *rows,
+         "--width", "700", "--height", "400", "--print-column", "1"],
+        capture_output=True, text=True, timeout=60, env=env
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return
+
+    selected = result.stdout.strip()
+    for g in groups:
+        if g["name"] == selected:
+            g["active"] = not g.get("active", True)
+            _save_config(cfg)
+            state = "active" if g["active"] else "inactive"
+            notify("Group toggled", f"{selected} is now {state}. Reload config to apply.")
+            return
+
+
+def _add_group(cfg, env):
+    result = subprocess.run(
+        ["zenity", "--forms", "--title", "➕ Add Group",
+         "--text", "New JQL group:",
+         "--add-entry", "Name (e.g. 🔥 My Group)",
+         "--add-entry", "JQL query",
+         "--add-entry", "Max results (default: 20)",
+         "--add-combo", "Sort by",
+         "--combo-values", "priority|status|key",
+         "--width", "500", "--height", "300"],
+        capture_output=True, text=True, timeout=120, env=env
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return
+
+    vals = result.stdout.strip().split("|")
+    if len(vals) >= 2 and vals[0] and vals[1]:
+        new_group = {
+            "name": vals[0],
+            "jql": vals[1],
+            "active": True,
+        }
+        if len(vals) >= 3 and vals[2]:
+            new_group["max_results"] = int(vals[2])
+        if len(vals) >= 4 and vals[3]:
+            new_group["sort_by"] = vals[3]
+        cfg.setdefault("groups", []).append(new_group)
+        _save_config(cfg)
+        notify("Group added", f"{vals[0]} added. Reload config to apply.")
+
+
+def _save_config(cfg):
+    # Remove env_file loaded vars from cfg before saving
+    with open(CONFIG_PATH, "w") as f:
+        yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
 
 # ── Icons & Priorities ────────────────────────────────────────
@@ -321,26 +512,32 @@ class JiraTray:
             threading.Thread(target=show_transition_dialog, args=(self.cfg, key, summary), daemon=True).start()
         return _cb
 
+    def _make_unpin_callback(self, key):
+        def _cb(*_args):
+            unpin_ticket(key)
+            notify("Unpinned", f"{key} removed from current tickets")
+            self.refresh()
+        return _cb
+
+    def _make_config_callback(self):
+        def _cb(*_args):
+            def _run():
+                show_config_dialog()
+                self.reload()
+            threading.Thread(target=_run, daemon=True).start()
+        return _cb
+
     def _make_search_callback(self):
         def _cb(*_args):
             threading.Thread(target=show_search_dialog, args=(self.cfg, self.data), daemon=True).start()
         return _cb
 
-    def _build_flat_transitions(self, issues):
-        """Fetch and add transition items for each issue (flat mode)."""
-        items = []
-        for i in issues:
-            key = i["key"].strip()
-            try:
-                transitions = get_transitions(self.cfg, key)
-                for t in transitions:
-                    items.append(MenuItem(
-                        f"      → {key}: {t['name']}",
-                        self._make_transition_callback(key, t["id"], t["name"])
-                    ))
-            except Exception:
-                pass
-        return items
+    def _get_issue_transitions(self, key):
+        """Fetch transitions for an issue, cached."""
+        try:
+            return get_transitions(self.cfg, key)
+        except Exception:
+            return []
 
     def build_menu(self):
         items = []
@@ -355,6 +552,31 @@ class JiraTray:
             refresh_txt = "Not yet refreshed"
         items.append(MenuItem(f"🕐 {refresh_txt} ({self.total_count()} issues)", None, enabled=False))
         items.append(Menu.SEPARATOR)
+
+        # Pinned / Current tickets
+        pinned_keys = load_pinned()
+        if pinned_keys:
+            items.append(MenuItem("── 📌 Current ──", None, enabled=False))
+            all_issues = {i["key"]: i for issues in self.data.values() for i in issues}
+            for pk in pinned_keys:
+                if pk in all_issues:
+                    i = all_issues[pk]
+                    summary = i["fields"]["summary"][:50]
+                    status = i["fields"]["status"]["name"]
+                    priority = i["fields"].get("priority", {}).get("name", "")
+                    picon = PRIORITY_ICONS.get(priority, "⚪")
+                    label = f"   📌 {picon} {pk} — {summary} [{status}]"
+                    items.append(MenuItem(label, open_issue(self.cfg["jira_url"], pk)))
+                    items.append(MenuItem(f"      📌 Unpin", self._make_unpin_callback(pk)))
+                    # Always show transitions under pinned tickets
+                    for t in self._get_issue_transitions(pk):
+                        items.append(MenuItem(
+                            f"      → {t['name']}",
+                            self._make_transition_callback(pk, t["id"], t["name"])
+                        ))
+                else:
+                    items.append(MenuItem(f"   📌 {pk} (not in current results)", open_issue(self.cfg["jira_url"], pk)))
+            items.append(Menu.SEPARATOR)
 
         for g in self.cfg["groups"]:
             if not g.get("active", True):
@@ -374,25 +596,22 @@ class JiraTray:
                 priority = i["fields"].get("priority", {}).get("name", "")
                 picon = PRIORITY_ICONS.get(priority, "⚪")
                 label = f"   {picon} {key} — {summary} [{status}]"
-                items.append(MenuItem(label, open_issue(self.cfg["jira_url"], key)))
 
-            # Flat transitions under each group
-            if transition_mode == "flat":
-                flat = self._build_flat_transitions(issues)
-                if flat:
-                    items.extend(flat)
+                if transition_mode == "popup":
+                    label += " ⚡"
+                    items.append(MenuItem(label, self._make_gtk_transition_callback(key, summary)))
+                else:
+                    items.append(MenuItem(label, open_issue(self.cfg["jira_url"], key)))
 
-        # Popup transitions — one entry per issue
-        if transition_mode == "popup":
-            items.append(Menu.SEPARATOR)
-            items.append(MenuItem("⚡ Transitions ──", None, enabled=False))
-            for g in self.cfg["groups"]:
-                if not g.get("active", True):
-                    continue
-                for i in self.data.get(g["name"], []):
-                    key = i["key"].strip()
-                    summary = i["fields"]["summary"][:40]
-                    items.append(MenuItem(f"   ⚡ {key} — {summary}", self._make_gtk_transition_callback(key, summary)))
+                # Flat: transitions right under each ticket
+                if transition_mode == "flat":
+                    for t in self._get_issue_transitions(key):
+                        items.append(MenuItem(
+                            f"      → {t['name']}",
+                            self._make_transition_callback(key, t["id"], t["name"])
+                        ))
+
+        # Board link
 
         # Board link
         if self.cfg.get("board_url"):
@@ -401,6 +620,7 @@ class JiraTray:
 
         items.append(Menu.SEPARATOR)
         items.append(MenuItem("🔍 Search issues", self._make_search_callback()))
+        items.append(MenuItem("⚙️ Configuration", self._make_config_callback()))
         items.append(MenuItem("Reload config", lambda _, __: self.reload()))
         items.append(MenuItem("Refresh", lambda _, __: self.refresh()))
         items.append(MenuItem("Quit", lambda icon, _: icon.stop()))
