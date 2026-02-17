@@ -13,14 +13,14 @@
 
 ## v1.1
 - [ ] Submenus per group
-- [ ] Open Jira Board quick link
-- [ ] Time since last refresh
-- [ ] max_results per group
-- [ ] sort_by per group
+- [x] Open Jira Board quick link
+- [x] Time since last refresh
+- [x] max_results per group
+- [x] sort_by per group
 - [ ] Custom icon per group
 - [ ] Hot-reload config on file change (inotify/watchdog)
 
 ## Packaging
-- [ ] PyPI (private index or token-gated)
+- [x] PyPI (open source — Apache 2.0)
 - [ ] Windows installer (.msi / .exe)
 - [ ] macOS .app bundle
