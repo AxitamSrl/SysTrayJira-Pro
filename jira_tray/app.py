@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 1988-2026 Axitam SRL. All rights reserved.
-# Proprietary — Commercial license required.
+# Licensed under the Apache License, Version 2.0
 # Lead developer: Regis GILOT <regis.gilot@axitam.eu>
 import os, time, threading, webbrowser, subprocess, datetime
 import requests, yaml
@@ -625,7 +625,7 @@ class JiraTray:
         items.append(MenuItem("Refresh", lambda _, __: self.refresh()))
         items.append(MenuItem("Quit", lambda icon, _: icon.stop()))
         items.append(Menu.SEPARATOR)
-        items.append(MenuItem("© Axitam SRL 1988-2026 — Commercial License", lambda *_: webbrowser.open("https://www.axitam.eu")))
+        items.append(MenuItem("© Axitam SRL 1988-2026 — Apache 2.0", lambda *_: webbrowser.open("https://www.axitam.eu")))
         return Menu(*items)
 
     def update_icon(self):

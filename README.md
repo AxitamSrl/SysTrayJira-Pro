@@ -3,7 +3,7 @@
 Premium version of [SysTrayJira](https://github.com/AxitamSrl/SysTrayJira) with advanced features.
 
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
-![License](https://img.shields.io/badge/license-Commercial-red)
+![License](https://img.shields.io/badge/license-Apache%202.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux%20|%20Windows%20|%20macOS-lightgrey)
 
 ## Pro Features
@@ -241,7 +241,7 @@ Reload config
 Refresh
 Quit
 ──────────────────────────────────────
-© Axitam SRL 1988-2026 — Commercial License
+© Axitam SRL 1988-2026 — Apache 2.0
 ```
 
 ### Search (🔍)
@@ -383,8 +383,18 @@ $Shortcut.Save()
 
 ## License
 
-Copyright 1988-2026 Axitam SRL. All rights reserved.
+Copyright 1988-2026 Axitam SRL
 
 Lead developer: Regis GILOT — regis.gilot@axitam.eu
 
-This is proprietary software. A valid commercial license is required.
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
+
+## Support the Project
+
+If you find SysTrayJira Pro useful, consider supporting its development:
+
+- ⭐ Star the repo on GitHub
+- 💖 [Sponsor on GitHub](https://github.com/sponsors/AxitamSrl)
+- ☕ [Buy me a coffee](https://ko-fi.com/axitam)
+
+Your support helps keep this project alive and free for everyone!
