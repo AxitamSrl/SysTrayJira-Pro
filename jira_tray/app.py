@@ -14,7 +14,6 @@ CONFIG_PATH = Path.home() / ".config" / "sysTrayJira" / "config.yaml"
 # ── Env & Config ──────────────────────────────────────────────
 
 def load_env(path):
-    """Load a bash-style .env file (supports 'export' prefix)."""
     if not path.exists():
         return
     with open(path) as f:
@@ -29,7 +28,6 @@ def load_env(path):
 
 
 def validate_config(cfg):
-    """Validate config and print warnings."""
     errors = []
     if not cfg.get("jira_url"):
         errors.append("jira_url is required")
@@ -99,20 +97,17 @@ def get_transitions(cfg, key):
 # ── Notifications ─────────────────────────────────────────────
 
 def notify(title, body):
-    """Send desktop notification (Linux: notify-send, macOS: osascript, Windows: toast)."""
     try:
         if os.name == "posix":
             if Path("/usr/bin/notify-send").exists():
                 subprocess.run(["notify-send", title, body, "-i", "dialog-information"], timeout=5)
             elif Path("/usr/bin/osascript").exists():
                 subprocess.run(["osascript", "-e", f'display notification "{body}" with title "{title}"'], timeout=5)
-        # Windows: fallback to print
     except Exception:
         pass
 
 
 def detect_new_issues(old_data, new_data):
-    """Return list of new issue keys per group."""
     new_issues = []
     for group, issues in new_data.items():
         old_keys = {i["key"] for i in old_data.get(group, [])}
@@ -135,6 +130,75 @@ def copy_to_clipboard(text):
                     continue
     except Exception:
         pass
+
+
+# ── Zenity Transition Dialog ──────────────────────────────────
+
+def show_transition_dialog(cfg, key, summary):
+    """Show a zenity dialog with available transitions for an issue."""
+    try:
+        transitions = get_transitions(cfg, key)
+        if not transitions:
+            notify("No transitions", f"{key} has no available transitions")
+            return
+        choices = [t["name"] for t in transitions]
+        result = subprocess.run(
+            ["zenity", "--list", "--title", f"Transitions — {key}",
+             "--text", f"{key} — {summary[:60]}",
+             "--column", "Action", *choices,
+             "--width", "400", "--height", "300"],
+            capture_output=True, text=True, timeout=60,
+            env={**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":1")}
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            selected = result.stdout.strip()
+            for t in transitions:
+                if t["name"] == selected:
+                    transition_issue(cfg, key, t["id"])
+                    notify("Transition OK", f"{key} → {selected}")
+                    return
+    except Exception as e:
+        notify("Transition error", str(e))
+
+
+def show_search_dialog(cfg, data):
+    """Show a zenity entry dialog to filter issues by key/text."""
+    try:
+        result = subprocess.run(
+            ["zenity", "--entry", "--title", "Search issues",
+             "--text", "Enter issue key or text to filter:",
+             "--width", "400"],
+            capture_output=True, text=True, timeout=60,
+            env={**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":1")}
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return
+        query = result.stdout.strip().lower()
+        matches = []
+        for issues in data.values():
+            for i in issues:
+                key = i["key"]
+                summary = i["fields"]["summary"]
+                if query in key.lower() or query in summary.lower():
+                    matches.append(f"{key}|{summary[:60]}|{i['fields']['status']['name']}")
+        if not matches:
+            subprocess.run(["zenity", "--info", "--text", f"No issues matching '{query}'", "--width", "300"],
+                           timeout=10, env={**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":1")})
+            return
+        result = subprocess.run(
+            ["zenity", "--list", "--title", f"Results for '{query}'",
+             "--text", f"{len(matches)} matches",
+             "--column", "Key", "--column", "Summary", "--column", "Status",
+             *[field for m in matches for field in m.split("|")],
+             "--width", "600", "--height", "400", "--print-column", "1"],
+            capture_output=True, text=True, timeout=60,
+            env={**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":1")}
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            selected_key = result.stdout.strip()
+            webbrowser.open(f"{cfg['jira_url']}/browse/{selected_key}")
+    except Exception as e:
+        notify("Search error", str(e))
 
 
 # ── Icons & Priorities ────────────────────────────────────────
@@ -173,7 +237,6 @@ def make_icon(color="blue", icon_path=None, count=0):
         d = ImageDraw.Draw(img)
         d.rectangle([8, 8, 56, 56], fill=color)
         d.text((22, 14), "J", fill="white")
-    # Badge with count
     if count > 0:
         d = ImageDraw.Draw(img)
         d.ellipse([38, 0, 63, 25], fill="red")
@@ -231,7 +294,6 @@ class JiraTray:
                 self.data[g["name"]] = []
                 print(f"Error fetching '{g['name']}': {e}")
         self.last_refresh = datetime.datetime.now()
-        # Notifications
         if old_data and self.cfg.get("notifications", True):
             new = detect_new_issues(old_data, self.data)
             for group, issue in new:
@@ -254,27 +316,36 @@ class JiraTray:
             copy_to_clipboard(f"{self.cfg['jira_url']}/browse/{key}")
         return _cb
 
-    def _build_issue_submenu(self, issue):
-        key = issue["key"].strip()
-        items = [
-            MenuItem("Open in browser", open_issue(self.cfg["jira_url"], key)),
-            MenuItem("Copy link", self._make_copy_callback(key)),
-            Menu.SEPARATOR,
-        ]
-        # Transitions
-        try:
-            transitions = get_transitions(self.cfg, key)
-            for t in transitions:
-                items.append(MenuItem(
-                    f"→ {t['name']}",
-                    self._make_transition_callback(key, t["id"], t["name"])
-                ))
-        except Exception:
-            items.append(MenuItem("(transitions unavailable)", None, enabled=False))
-        return Menu(*items)
+    def _make_gtk_transition_callback(self, key, summary):
+        def _cb(*_args):
+            threading.Thread(target=show_transition_dialog, args=(self.cfg, key, summary), daemon=True).start()
+        return _cb
+
+    def _make_search_callback(self):
+        def _cb(*_args):
+            threading.Thread(target=show_search_dialog, args=(self.cfg, self.data), daemon=True).start()
+        return _cb
+
+    def _build_flat_transitions(self, issues):
+        """Fetch and add transition items for each issue (flat mode)."""
+        items = []
+        for i in issues:
+            key = i["key"].strip()
+            try:
+                transitions = get_transitions(self.cfg, key)
+                for t in transitions:
+                    items.append(MenuItem(
+                        f"      → {key}: {t['name']}",
+                        self._make_transition_callback(key, t["id"], t["name"])
+                    ))
+            except Exception:
+                pass
+        return items
 
     def build_menu(self):
         items = []
+        transition_mode = self.cfg.get("transition_mode", "none")
+
         # Refresh info
         if self.last_refresh:
             ago = datetime.datetime.now() - self.last_refresh
@@ -285,7 +356,6 @@ class JiraTray:
         items.append(MenuItem(f"🕐 {refresh_txt} ({self.total_count()} issues)", None, enabled=False))
         items.append(Menu.SEPARATOR)
 
-        # Groups as submenus
         for g in self.cfg["groups"]:
             if not g.get("active", True):
                 continue
@@ -294,20 +364,35 @@ class JiraTray:
             sort_by = g.get("sort_by", "priority")
             issues = sort_issues(issues, sort_by)
 
+            items.append(MenuItem(f"── {name} ({len(issues)}) ──", None, enabled=False))
             if not issues:
-                sub_items = [MenuItem("(empty)", None, enabled=False)]
-            else:
-                sub_items = []
-                for i in issues:
-                    key = i["key"].strip()
-                    summary = i["fields"]["summary"][:50]
-                    status = i["fields"]["status"]["name"]
-                    priority = i["fields"].get("priority", {}).get("name", "")
-                    picon = PRIORITY_ICONS.get(priority, "⚪")
-                    label = f"{picon} {key} — {summary} [{status}]"
-                    sub_items.append(MenuItem(label, self._build_issue_submenu(i)))
+                items.append(MenuItem("   (empty)", None, enabled=False))
+            for i in issues:
+                key = i["key"].strip()
+                summary = i["fields"]["summary"][:50]
+                status = i["fields"]["status"]["name"]
+                priority = i["fields"].get("priority", {}).get("name", "")
+                picon = PRIORITY_ICONS.get(priority, "⚪")
+                label = f"   {picon} {key} — {summary} [{status}]"
+                items.append(MenuItem(label, open_issue(self.cfg["jira_url"], key)))
 
-            items.append(MenuItem(f"{name} ({len(issues)})", Menu(*sub_items)))
+            # Flat transitions under each group
+            if transition_mode == "flat":
+                flat = self._build_flat_transitions(issues)
+                if flat:
+                    items.extend(flat)
+
+        # Popup transitions — one entry per issue
+        if transition_mode == "popup":
+            items.append(Menu.SEPARATOR)
+            items.append(MenuItem("⚡ Transitions ──", None, enabled=False))
+            for g in self.cfg["groups"]:
+                if not g.get("active", True):
+                    continue
+                for i in self.data.get(g["name"], []):
+                    key = i["key"].strip()
+                    summary = i["fields"]["summary"][:40]
+                    items.append(MenuItem(f"   ⚡ {key} — {summary}", self._make_gtk_transition_callback(key, summary)))
 
         # Board link
         if self.cfg.get("board_url"):
@@ -315,6 +400,7 @@ class JiraTray:
             items.append(MenuItem("🔗 Open Jira Board", lambda *_: webbrowser.open(self.cfg["board_url"])))
 
         items.append(Menu.SEPARATOR)
+        items.append(MenuItem("🔍 Search issues", self._make_search_callback()))
         items.append(MenuItem("Reload config", lambda _, __: self.reload()))
         items.append(MenuItem("Refresh", lambda _, __: self.refresh()))
         items.append(MenuItem("Quit", lambda icon, _: icon.stop()))
@@ -367,6 +453,9 @@ email: "your-email@example.com"
 poll_interval: 300
 auto_refresh: true
 notifications: true
+
+# Transition mode: "none" (click opens browser), "flat" (transitions listed in menu), "popup" (GTK dialog)
+transition_mode: "none"
 
 # board_url: "https://your-jira-instance.com/secure/RapidBoard.jspa?rapidView=123"
 
