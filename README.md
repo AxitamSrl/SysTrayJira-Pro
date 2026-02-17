@@ -409,7 +409,7 @@ Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for detai
 If you find SysTrayJira Pro useful, consider supporting its development:
 
 - ⭐ Star the repo on GitHub
-- 💖 [Sponsor on GitHub](https://github.com/sponsors/AxitamSrl)
-- ☕ [Buy me a coffee](https://ko-fi.com/axitam)
+- 💖 [Sponsor on GitHub](https://github.com/sponsors/AxitamSrl) (USD)
+- 💶 [Donate on Liberapay](https://fr.liberapay.com/Axitam) (EUR)
 
 Your support helps keep this project alive and free for everyone!
