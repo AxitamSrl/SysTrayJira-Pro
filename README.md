@@ -48,6 +48,21 @@ All features from the free version, plus:
 | MATE | ✅ | Native tray support |
 | i3/Sway | ⚠️ | Needs a tray bar |
 
+### Display Servers (Linux)
+
+| Server | Status | Notes |
+|--------|--------|-------|
+| X11/Xorg | ✅ | Full support |
+| Wayland | ⚠️ | Works with StatusNotifier/AppIndicator. GNOME Wayland needs the AppIndicator extension |
+
+### Jira Compatibility
+
+| Type | Status | Auth Mode |
+|------|--------|-----------|
+| Atlassian Cloud | ✅ | `basic` (email + API token) |
+| Jira Server | ✅ | `bearer` or `pat` |
+| Jira Data Center | ✅ | `bearer` or `pat` |
+
 ### Requirements
 
 - Python 3.10+
